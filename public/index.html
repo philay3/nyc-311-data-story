@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phone vs App: NYC 311 Response Times</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 2.5rem 3rem;
+      max-width: 680px;
+      width: 100%;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.07);
+    }
+
+    .eyebrow {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #888;
+      margin-bottom: 0.6rem;
+    }
+
+    h1 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: 0.5rem;
+    }
+
+    h1 span {
+      color: #2563eb;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: #555;
+      margin-bottom: 2rem;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 280px;
+      margin-bottom: 1.75rem;
+    }
+
+    .takeaway {
+      background: #f0f4ff;
+      border-left: 4px solid #2563eb;
+      border-radius: 0 8px 8px 0;
+      padding: 0.9rem 1.1rem;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      color: #1e3a8a;
+    }
+
+    .takeaway strong {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+      opacity: 0.7;
+    }
+
+    .meta {
+      margin-top: 1.5rem;
+      font-size: 0.75rem;
+      color: #aaa;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <p class="eyebrow">NYC 311 · 2023 · 25,000 complaints</p>
+    <h1>Phone vs App: Does How You <span>Complain</span> Affect How Fast NYC Responds?</h1>
+    <p class="subtitle">Average resolution time by submission channel</p>
+
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
+
+    <div class="takeaway" id="takeaway">
+      <strong>Takeaway</strong>
+      Loading…
+    </div>
+
+    <p class="meta">Source: NYC Open Data · 311 Service Requests 2023</p>
+  </div>
+
+  <script>
+    const CHANNEL_LABELS = { PHONE: 'Phone', ONLINE: 'Online (Web)', MOBILE: 'Mobile App' };
+    const COLORS = {
+      PHONE:  { bg: 'rgba(37,  99, 235, 0.85)', border: '#1d4ed8' },
+      ONLINE: { bg: 'rgba(16, 185, 129, 0.85)', border: '#059669' },
+      MOBILE: { bg: 'rgba(245,158,  11, 0.85)', border: '#d97706' },
+    };
+
+    fetch('/api/data')
+      .then(r => r.json())
+      .then(data => {
+        const labels  = data.map(d => CHANNEL_LABELS[d.channel] ?? d.channel);
+        const values  = data.map(d => d.avg_hours);
+        const bgColors     = data.map(d => (COLORS[d.channel] || {}).bg     ?? '#94a3b8');
+        const borderColors = data.map(d => (COLORS[d.channel] || {}).border ?? '#64748b');
+
+        new Chart(document.getElementById('chart'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Avg. Resolution (hours)',
+              data: values,
+              backgroundColor: bgColors,
+              borderColor: borderColors,
+              borderWidth: 2,
+              borderRadius: 8,
+              borderSkipped: false,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: ctx => {
+                    const h = ctx.parsed.y;
+                    const days = (h / 24).toFixed(1);
+                    return ` ${h} hrs  (≈ ${days} days)`;
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: false,
+                suggestedMin: Math.min(...values) - 10,
+                ticks: {
+                  callback: v => `${v}h`,
+                  color: '#888',
+                },
+                grid: { color: '#f0f0f0' },
+                border: { display: false },
+              },
+              x: {
+                ticks: { color: '#444', font: { weight: '600', size: 13 } },
+                grid: { display: false },
+                border: { display: false },
+              }
+            }
+          }
+        });
+
+        // Build takeaway dynamically
+        const sorted = [...data].sort((a, b) => a.avg_hours - b.avg_hours);
+        const fastest = sorted[0];
+        const slowest = sorted[sorted.length - 1];
+        const diff = (slowest.avg_hours - fastest.avg_hours).toFixed(1);
+        const fastLabel = CHANNEL_LABELS[fastest.channel] ?? fastest.channel;
+        const slowLabel = CHANNEL_LABELS[slowest.channel] ?? slowest.channel;
+
+        document.getElementById('takeaway').innerHTML =
+          `<strong>Takeaway</strong>` +
+          `<b>${fastLabel}</b> complaints resolve ~${diff} hours faster than <b>${slowLabel}</b> — ` +
+          `but all channels average around <b>${Math.round(fastest.avg_hours / 24)} days</b>, ` +
+          `so the channel you use matters far less than the complaint itself.`;
+      });
+  </script>
+</body>
+</html>
